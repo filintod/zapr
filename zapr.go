@@ -68,6 +68,7 @@ import (
 
 // zapLogger is a logr.Logger that uses Zap to log.  The level has already been
 // converted to a Zap level, which is to say that `logrLevel = -1*zapLevel`.
+// sLvl is the starting level and defaults to zapcore.Info
 type zapLogger struct {
 	// NB: this looks very similar to zap.SugaredLogger, but
 	// deals with our desire to have multiple verbosity levels.
@@ -156,12 +157,12 @@ func (zl *zapLogger) WithName(name string) logr.Logger {
 }
 
 // newLoggerWithExtraSkip allows creation of loggers with variable levels of callstack skipping
-func newLoggerWithExtraSkip(l *zap.Logger, callerSkip int, startingLevel zapcore.Level) logr.Logger {
+func newLoggerWithExtraSkip(l *zap.Logger, callerSkip int, sLvl zapcore.Level) logr.Logger {
 	log := l.WithOptions(zap.AddCallerSkip(callerSkip))
 	return &zapLogger{
 		l:    log,
-		lvl:  startingLevel,
-		sLvl: startingLevel,
+		lvl:  sLvl,
+		sLvl: sLvl,
 	}
 }
 
@@ -178,11 +179,11 @@ func NewLogger(l *zap.Logger, opts ...func(*zapcore.Level)) logr.Logger {
 
 // WithVerbosityLevels sets the max depth of verbosity that is allowed,  without it the max is 1
 func WithVerbosityLevels(vLevels int) func(*zapcore.Level) {
-	return func(startingLevel *zapcore.Level) {
+	return func(sLvl *zapcore.Level) {
 		maxVerbosity := int(zapcore.FatalLevel - zapcore.DebugLevel)
 		if vLevels > maxVerbosity {
 			panic(fmt.Sprintf("Verbosity Levels %d provided more than available levels %d", vLevels, maxVerbosity))
 		}
-		*startingLevel = zapcore.Level(vLevels - 1)
+		*sLvl = zapcore.Level(vLevels - 1)
 	}
 }
