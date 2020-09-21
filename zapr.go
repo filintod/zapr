@@ -54,6 +54,8 @@ limitations under the License.
 package zapr
 
 import (
+	"fmt"
+
 	"github.com/go-logr/logr"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -69,8 +71,9 @@ import (
 type zapLogger struct {
 	// NB: this looks very similar to zap.SugaredLogger, but
 	// deals with our desire to have multiple verbosity levels.
-	l   *zap.Logger
-	lvl zapcore.Level
+	l    *zap.Logger
+	lvl  zapcore.Level
+	sLvl zapcore.Level
 }
 
 // handleFields converts a bunch of arbitrary key-value pairs into Zap fields.  It takes
@@ -136,32 +139,50 @@ func (zl *zapLogger) Error(err error, msg string, keysAndVals ...interface{}) {
 
 func (zl *zapLogger) V(level int) logr.Logger {
 	return &zapLogger{
-		lvl: zl.lvl - zapcore.Level(level),
-		l:   zl.l,
+		lvl:  zl.lvl - zapcore.Level(level),
+		l:    zl.l,
+		sLvl: zl.sLvl,
 	}
 }
 
 func (zl *zapLogger) WithValues(keysAndValues ...interface{}) logr.Logger {
 	newLogger := zl.l.With(handleFields(zl.l, keysAndValues)...)
-	return newLoggerWithExtraSkip(newLogger, 0)
+	return newLoggerWithExtraSkip(newLogger, 0, zl.sLvl)
 }
 
 func (zl *zapLogger) WithName(name string) logr.Logger {
 	newLogger := zl.l.Named(name)
-	return newLoggerWithExtraSkip(newLogger, 0)
+	return newLoggerWithExtraSkip(newLogger, 0, zl.sLvl)
 }
 
 // newLoggerWithExtraSkip allows creation of loggers with variable levels of callstack skipping
-func newLoggerWithExtraSkip(l *zap.Logger, callerSkip int) logr.Logger {
+func newLoggerWithExtraSkip(l *zap.Logger, callerSkip int, startingLevel zapcore.Level) logr.Logger {
 	log := l.WithOptions(zap.AddCallerSkip(callerSkip))
 	return &zapLogger{
-		l:   log,
-		lvl: zap.InfoLevel,
+		l:    log,
+		lvl:  startingLevel,
+		sLvl: startingLevel,
 	}
 }
 
 // NewLogger creates a new logr.Logger using the given Zap Logger to log.
-func NewLogger(l *zap.Logger) logr.Logger {
+func NewLogger(l *zap.Logger, opts ...func(*zapcore.Level)) logr.Logger {
+	var startingLevel = zapcore.InfoLevel
+
+	for _, opt := range opts {
+		opt(&startingLevel)
+	}
 	// creates a new logger skipping one level of callstack
-	return newLoggerWithExtraSkip(l, 1)
+	return newLoggerWithExtraSkip(l, 1, startingLevel)
+}
+
+// WithVerbosityLevels sets the max depth of verbosity that is allowed,  without it the max is 1
+func WithVerbosityLevels(vLevels int) func(*zapcore.Level) {
+	return func(startingLevel *zapcore.Level) {
+		maxVerbosity := int(zapcore.FatalLevel - zapcore.DebugLevel)
+		if vLevels > maxVerbosity {
+			panic(fmt.Sprintf("Verbosity Levels %d provided more than available levels %d", vLevels, maxVerbosity))
+		}
+		*startingLevel = zapcore.Level(vLevels - 1)
+	}
 }
